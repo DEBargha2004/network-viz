@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCP Tahoe Simulator | Congestion Control Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div id="app" class="app-shell">
+        <!-- Top Navigation Header -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-icon tahoe-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="brand-title">TCP Tahoe Visualizer</h1>
+                    <p class="brand-subtitle">Congestion Control • Slow Start, Additive Increase & Multiplicative Decrease</p>
+                </div>
+            </div>
+
+            <div class="header-status-group">
+                <!-- Current Phase Indicator Badge -->
+                <div class="phase-badge phase-slowstart" id="tahoe-phase-badge">
+                    <span class="phase-label">Phase:</span>
+                    <span class="phase-value" id="tahoe-phase-text">Slow Start (Exponential)</span>
+                </div>
+                <!-- Growth Rate Chip -->
+                <div class="growth-chip" id="growth-rate-chip">
+                    Formula: <span id="growth-rate-formula">cwnd ← cwnd × 2</span>
+                </div>
+                <div class="status-indicator" id="sim-status-badge">
+                    <span class="status-dot ready"></span>
+                    <span class="status-text" id="sim-status-text">Ready</span>
+                </div>
+                <div class="header-divider"></div>
+                <a href="../flooding/index.html" class="btn btn-xs btn-outline" style="text-decoration:none; color:var(--text-secondary);" title="Go to Flooding visualizer">
+                    <span>Flooding</span>
+                </a>
+                <a href="../dsr/index.html" class="btn btn-xs btn-outline" style="text-decoration:none; color:var(--text-secondary);" title="Go to DSR visualizer">
+                    <span>DSR</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Configuration Toolbar -->
+        <section class="toolbar-section">
+            <div class="toolbar-group">
+                <div class="label-with-value">
+                    <label class="control-label" for="ssthresh-slider">Initial ssthresh</label>
+                    <span class="value-chip chip-purple" id="ssthresh-val">8 MSS</span>
+                </div>
+                <input type="range" id="ssthresh-slider" min="2" max="24" value="8" class="range-slider">
+            </div>
+
+            <div class="toolbar-group">
+                <div class="label-with-value">
+                    <label class="control-label" for="buffer-slider">Router Buffer Capacity</label>
+                    <span class="value-chip chip-amber" id="buffer-val">16 pkts</span>
+                </div>
+                <input type="range" id="buffer-slider" min="6" max="28" value="16" class="range-slider">
+            </div>
+
+            <div class="toolbar-group">
+                <label class="control-label" for="scenario-select">Preset Scenario</label>
+                <div class="select-wrapper">
+                    <select id="scenario-select" class="form-select">
+                        <optgroup label="📚 Textbook Curriculum & References">
+                            <option value="textbook_24_11" selected>Figure 24.11: Complete Lifecycle (Slow Start, AI, Timeout & 3 ACKs)</option>
+                            <option value="slow_start_exponential">Figure 24.8: Slow Start Exponential Growth (2× Doubling per RTT)</option>
+                            <option value="congestion_avoidance_linear">Figure 24.9: Congestion Avoidance Linear Probing (+1 MSS/RTT)</option>
+                        </optgroup>
+                        <optgroup label="⚡ Packet Loss & Congestion Dynamics">
+                            <option value="fast_retransmit_3ack">Mild Congestion: 3 Duplicate ACKs & Fast Retransmit (Packets 1–7)</option>
+                            <option value="severe_timeout_rto">Severe Blackout: Dead Link & Retransmission Timeout (RTO Timer)</option>
+                            <option value="buffer_overflow_taildrop">Router Bottleneck: Tail Drop Queue Overflow Oscillations</option>
+                            <option value="random_wireless_loss">Transient Wireless Loss: False Congestion Collapse Penalty</option>
+                        </optgroup>
+                        <optgroup label="🔬 Protocol Comparisons & Topologies">
+                            <option value="tahoe_vs_reno">Tahoe vs Reno Showdown: Fast Recovery vs Slow Start Penalty</option>
+                            <option value="high_bdp_pipe">High BDP Pipe: Long Fat Network (Deep Buffer Pipeline)</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+
+            <div class="toolbar-group toggle-group">
+                <label class="control-label" for="reno-compare-toggle">Compare with Reno</label>
+                <label class="switch">
+                    <input type="checkbox" id="reno-compare-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <div class="toolbar-divider"></div>
+
+            <div class="toolbar-actions">
+                <button id="btn-ack-miss" class="btn btn-warning" title="Drop packet #4 to trigger 3 Duplicate ACKs">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span>Simulate ACK Miss</span>
+                </button>
+                <button id="btn-force-loss" class="btn btn-danger" title="Force timeout on next RTT">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    <span>Timeout (RTO)</span>
+                </button>
+                <button id="btn-run-sim" class="btn btn-primary">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <span>Run Simulation</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Main Workspace: Split Canvas & Sidebar -->
+        <main class="main-workspace">
+            <div class="canvas-panel tahoe-split-panel">
+                <!-- Upper View: cwnd vs RTT Chart (Figure 24.11) -->
+                <div class="chart-container">
+                    <div class="chart-header-bar">
+                        <div class="chart-title-group">
+                            <span class="chart-title">Figure 24.11: TCP Congestion Policy (Jacobson 1988)</span>
+                            <span class="chart-desc">SS (Slow Start Exponential 2×), AI (Additive Increase +1), and MD (Multiplicative Decrease)</span>
+                        </div>
+                        <div class="chart-legend">
+                            <div class="legend-item"><span class="legend-dot dot-slowstart"></span> SS: Slow Start</div>
+                            <div class="legend-item"><span class="legend-dot dot-avoidance"></span> AI: Additive Increase</div>
+                            <div class="legend-item"><span class="legend-dot dot-ssthresh"></span> Threshold Line</div>
+                            <div class="legend-item"><span class="legend-dot dot-loss"></span> Time-out / 3 ACKs (MD)</div>
+                            <div class="legend-item legend-reno-item hidden" id="legend-reno"><span class="legend-dot dot-reno"></span> Reno (Fast Recovery)</div>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrap" id="chart-wrap">
+                        <canvas id="chart-canvas"></canvas>
+                        <!-- Chart Tooltip Overlay -->
+                        <div id="chart-tooltip" class="chart-tooltip hidden"></div>
+                    </div>
+                    <!-- Bottom Phase Ribbon Matching Figure 24.11 -->
+                    <div class="figure-phase-ribbon" id="phase-ribbon-bar">
+                        <!-- Dynamically generated from simulation data -->
+                    </div>
+                </div>
+
+                <!-- Lower View: Animated Transmission Pipe & Sliding Window -->
+                <div class="pipe-container">
+                    <div class="pipe-header-bar">
+                        <div class="pipe-title-group">
+                            <span class="pipe-title">Network Pipeline, Packets & Cumulative Acknowledgements</span>
+                            <span class="pipe-sub" id="pipe-live-status">Ready to transmit</span>
+                        </div>
+                        <div class="pipe-metrics-quick">
+                            <span class="metric-pill">Flight Size: <strong id="quick-inflight">1</strong> MSS</span>
+                            <span class="metric-pill">Router Buffer: <strong id="quick-queue">0 / 16</strong> pkts</span>
+                            <span class="metric-pill" id="quick-drop-badge">Loss / DupACKs: <strong>0</strong></span>
+                        </div>
+                    </div>
+                    <div class="pipe-canvas-wrap" id="pipe-wrap">
+                        <canvas id="pipe-canvas"></canvas>
+                    </div>
+                    <!-- Packet vs ACK Timeline Strip -->
+                    <div class="ack-miss-strip" id="ack-miss-strip">
+                        <div class="strip-row">
+                            <span class="strip-label">Transmitted Packets:</span>
+                            <div class="strip-tokens" id="strip-packets"></div>
+                        </div>
+                        <div class="strip-row">
+                            <span class="strip-label">Acknowledgements:</span>
+                            <div class="strip-tokens" id="strip-acks"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Floating Playback Controller -->
+                <div class="playback-controller">
+                    <div class="playback-controls">
+                        <button id="btn-ctrl-reset" class="ctrl-btn" title="Reset Simulation">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                                <path d="M3 3v5h5"></path>
+                            </svg>
+                        </button>
+                        <button id="btn-ctrl-prev" class="ctrl-btn" title="Previous RTT">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                                <line x1="5" y1="19" x2="5" y2="5"></line>
+                            </svg>
+                        </button>
+                        <button id="btn-ctrl-play" class="ctrl-btn play-main-btn" title="Play / Pause">
+                            <svg id="icon-play" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                            </svg>
+                            <svg id="icon-pause" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="4" width="4" height="16"></rect>
+                                <rect x="14" y="4" width="4" height="16"></rect>
+                            </svg>
+                        </button>
+                        <button id="btn-ctrl-next" class="ctrl-btn" title="Next RTT">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                                <line x1="19" y1="5" x2="19" y2="19"></line>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="playback-timeline">
+                        <div class="round-tracker">
+                            <span class="round-badge" id="current-round-text">RTT 0 / 24</span>
+                        </div>
+                        <input type="range" id="timeline-slider" min="0" max="24" value="0" class="timeline-range">
+                    </div>
+
+                    <div class="speed-controls">
+                        <span class="speed-label">Speed</span>
+                        <div class="speed-buttons" id="speed-btn-group">
+                            <button class="speed-pill" data-speed="0.25">0.25x</button>
+                            <button class="speed-pill" data-speed="0.5">0.5x</button>
+                            <button class="speed-pill active" data-speed="1.0">1.0x</button>
+                            <button class="speed-pill" data-speed="1.5">1.5x</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Inspector & Information Sidebar -->
+            <aside class="sidebar-panel">
+                <nav class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="tab-timeline">
+                        <span>RTT Timeline</span>
+                        <span class="badge" id="log-count-badge">0</span>
+                    </button>
+                    <button class="tab-btn" data-tab="tab-inspector">
+                        <span>TCP Inspector</span>
+                    </button>
+                    <button class="tab-btn" data-tab="tab-metrics">
+                        <span>Metrics</span>
+                    </button>
+                    <button class="tab-btn" data-tab="tab-theory">
+                        <span>Tahoe vs Reno</span>
+                    </button>
+                </nav>
+
+                <div class="sidebar-content">
+                    <!-- Tab 1: RTT Progression Log -->
+                    <div id="tab-timeline" class="tab-pane active">
+                        <div class="timeline-header">
+                            <h3>RTT Execution Log</h3>
+                            <span class="step-summary-text" id="timeline-status-summary">Use Next RTT or Play to observe window evolution</span>
+                        </div>
+                        <div class="timeline-events-container" id="timeline-events-list">
+                            <div class="empty-state">
+                                <div class="empty-icon">📈</div>
+                                <p>No RTT rounds simulated yet.<br>Click <strong>Run Simulation</strong> or <strong>Next RTT</strong>.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: TCP State Inspector -->
+                    <div id="tab-inspector" class="tab-pane">
+                        <div class="inspector-header">
+                            <h3>TCP Protocol State Snapshot</h3>
+                            <span class="inspector-hint">Detailed metrics for sender window, router bottleneck queue, and receiver ACKs</span>
+                        </div>
+
+                        <div class="inspector-card">
+                            <h4>Sender State (TCP Tahoe)</h4>
+                            <div class="key-value-list">
+                                <div class="key-value-row">
+                                    <span class="key">Live Animation Action</span>
+                                    <span class="val highlight-emerald" id="insp-live-action" style="font-size:11px; font-weight:600;">Idle</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Congestion Window (cwnd)</span>
+                                    <span class="val highlight-cyan" id="insp-cwnd">1 MSS</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Slow Start Threshold (ssthresh)</span>
+                                    <span class="val highlight-purple" id="insp-ssthresh">8 MSS</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Current Operating Phase</span>
+                                    <span class="val" id="insp-phase">SLOW START</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Phase Formula</span>
+                                    <span class="val highlight-cyan" id="insp-formula">cwnd ← cwnd × 2</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">In-Flight Packets</span>
+                                    <span class="val" id="insp-inflight">1 MSS</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Duplicate ACKs Received</span>
+                                    <span class="val" id="insp-dupacks">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="inspector-card">
+                            <h4>Bottleneck Router Queue</h4>
+                            <div class="key-value-list">
+                                <div class="key-value-row">
+                                    <span class="key">Buffer Occupancy</span>
+                                    <span class="val" id="insp-buffer-occ">0 / 16 pkts</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Buffer Utilization</span>
+                                    <span class="val" id="insp-buffer-util">0%</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Packets Dropped</span>
+                                    <span class="val highlight-rose" id="insp-drops">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="inspector-card">
+                            <h4>Receiver State</h4>
+                            <div class="key-value-list">
+                                <div class="key-value-row">
+                                    <span class="key">Total Delivered Packets</span>
+                                    <span class="val highlight-emerald" id="insp-rcv-ack">0</span>
+                                </div>
+                                <div class="key-value-row">
+                                    <span class="key">Last Cumulative ACK</span>
+                                    <span class="val" id="insp-rcv-lastack">ACK #0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: Performance Metrics -->
+                    <div id="tab-metrics" class="tab-pane">
+                        <div class="metrics-grid">
+                            <div class="metric-card highlight-cyan">
+                                <span class="metric-label">Peak cwnd</span>
+                                <span class="metric-value" id="metric-peak-cwnd">1</span>
+                                <span class="metric-sub">Maximum window attained</span>
+                            </div>
+                            <div class="metric-card highlight-success">
+                                <span class="metric-label">Delivered Packets</span>
+                                <span class="metric-value" id="metric-delivered">0</span>
+                                <span class="metric-sub">Successfully ACKed</span>
+                            </div>
+                            <div class="metric-card highlight-danger">
+                                <span class="metric-label">Loss Events</span>
+                                <span class="metric-value" id="metric-losses">0</span>
+                                <span class="metric-sub">Tahoe reset drops</span>
+                            </div>
+                            <div class="metric-card highlight-purple">
+                                <span class="metric-label">Current ssthresh</span>
+                                <span class="metric-value" id="metric-cur-ssthresh">8</span>
+                                <span class="metric-sub">Threshold MSS</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-label">Avg Throughput</span>
+                                <span class="metric-value" id="metric-throughput">0</span>
+                                <span class="metric-sub">Packets per RTT</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-label">Goodput Efficiency</span>
+                                <span class="metric-value" id="metric-goodput">100%</span>
+                                <span class="metric-sub">Delivery ratio</span>
+                            </div>
+                        </div>
+
+                        <div class="metrics-card-full">
+                            <h4>Tahoe Multiplicative Decrease Log</h4>
+                            <div id="loss-history-list" class="paths-list">
+                                <p class="text-muted">No loss events have occurred yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 4: Tahoe Theory & Algorithm Rules -->
+                    <div id="tab-theory" class="tab-pane">
+                        <div class="theory-article">
+                            <h4>TCP Tahoe Congestion Control</h4>
+                            <p>Introduced in 1988 by Van Jacobson, TCP Tahoe was the seminal algorithm that saved the early internet from collapse by implementing AIMD (Additive Increase / Multiplicative Decrease).</p>
+
+                            <div class="theory-callout">
+                                <strong>The 3 Phases of TCP Tahoe:</strong>
+                                <ul>
+                                    <li><strong>1. Slow Start:</strong> Begins with <code>cwnd = 1</code>. For every ACK received, <code>cwnd</code> increases by 1 MSS (doubling each RTT: 1, 2, 4, 8...). Runs while <code>cwnd &lt; ssthresh</code>.</li>
+                                    <li><strong>2. Congestion Avoidance (Additive Increase):</strong> Once <code>cwnd &ge; ssthresh</code>, exponential growth stops. The window grows linearly by <strong>+1 MSS per RTT</strong> (<code>+1/cwnd</code> per ACK received).</li>
+                                    <li><strong>3. Loss Reaction (Multiplicative Decrease):</strong> On packet loss (Timeout or 3 Duplicate ACKs):
+                                        <br>• <code>ssthresh ← max(2, ⌊cwnd / 2⌋)</code>
+                                        <br>• <code>cwnd ← 1</code> (Always resets all the way to 1!)
+                                        <br>• Re-enters Slow Start.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <h4>Tahoe vs TCP Reno</h4>
+                            <div class="pros-cons-grid">
+                                <div class="pros-box">
+                                    <span class="box-title">TCP Tahoe (1988)</span>
+                                    <ul>
+                                        <li>Fast Retransmit on 3 Duplicate ACKs</li>
+                                        <li><strong>No Fast Recovery</strong></li>
+                                        <li>Always resets <code>cwnd = 1</code> on any loss</li>
+                                        <li>Severe throughput penalty from Slow Start restart</li>
+                                    </ul>
+                                </div>
+                                <div class="cons-box">
+                                    <span class="box-title">TCP Reno (1990)</span>
+                                    <ul>
+                                        <li>Fast Retransmit on 3 Duplicate ACKs</li>
+                                        <li><strong>Fast Recovery:</strong> sets <code>cwnd = ssthresh + 3</code></li>
+                                        <li>Does NOT reset to 1 on 3 Dup ACKs</li>
+                                        <li>Skips Slow Start and resumes Congestion Avoidance directly!</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Script Entrypoint -->
+    <script src="./script.js"></script>
+</body>
+</html>
